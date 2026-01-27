@@ -1,0 +1,83 @@
+name: Build rust-xous with Guix
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # taken from guix-rustup
+      - name: Guix cache
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/guix
+          # use a key that (almost) never matches
+          key: guix-cache-${{ github.sha }}
+          restore-keys: |
+            guix-cache-
+            # Cannot use a cache for /gnu/store, since restore fails
+
+      - name: Install Guix
+        uses: PromyLOPh/guix-install-action@v1
+        with:
+          channels: |-
+            (list (channel
+                   (inherit %default-guix-channel))
+                  (channel
+                   (name 'rustup)
+                   (url "https://github.com/sbellem/guix-rustup")
+                   (branch "1.93.0")))
+
+      - name: Show Guix version
+        run: guix --version
+
+      - name: Build rust-xous
+        run: |
+          # Use substitutes where available, build what's missing
+          # -L . adds current directory as load path for rust-xous.scm
+          guix build -L . rust-xous --verbosity=2 \
+            --substitute-urls="https://ci.guix.gnu.org https://bordeaux.guix.gnu.org"
+
+      - name: Test rust-xous toolchain
+        run: |
+          # Get the store path
+          RUST_XOUS=$(guix build -L . rust-xous)
+          echo "Built: $RUST_XOUS"
+
+          # Verify rustc works and has xous target
+          $RUST_XOUS/bin/rustc --version
+          $RUST_XOUS/bin/rustc --print target-list | grep -q xous && echo "Xous target available"
+
+          # Verify cargo works
+          $RUST_XOUS/bin/cargo --version
+
+          # Test compiling a simple program for xous target
+          # Note: -C panic=abort is required for no_std targets without unwinding support
+          echo '#![no_std] #![no_main] #[panic_handler] fn p(_: &core::panic::PanicInfo) -> ! { loop {} }' > /tmp/test.rs
+          $RUST_XOUS/bin/rustc --target riscv32imac-unknown-xous-elf -C panic=abort --emit=obj -o /tmp/test.o /tmp/test.rs
+          file /tmp/test.o | grep -q "RISC-V" && echo "Successfully compiled for RISC-V xous target"
+
+      - name: Upload build result info
+        run: |
+          RUST_XOUS=$(guix build -L . rust-xous)
+          echo "## Build Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Store path: \`$RUST_XOUS\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Toolchain info" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          $RUST_XOUS/bin/rustc --version >> $GITHUB_STEP_SUMMARY
+          $RUST_XOUS/bin/cargo --version >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Available targets with 'xous':" >> $GITHUB_STEP_SUMMARY
+          $RUST_XOUS/bin/rustc --print target-list | grep xous >> $GITHUB_STEP_SUMMARY || echo "none found" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
