@@ -27,7 +27,7 @@ Add to `~/.config/guix/channels.scm`:
 ```scheme
 (cons (channel
         (name 'rust-xous)
-        (url "file:///path/to/rust-xous-guix"))
+        (url "https://github.com/sbellem/rust-xous-guix"))
       %default-channels)
 ```
 
