@@ -4,7 +4,7 @@
 ;;
 ;;   (cons (channel
 ;;           (name 'rust-xous)
-;;           (url "file:///path/to/rust-xous-guix"))
+;;           (url "https://github.com/sbellem/guix-rustup"))
 ;;         %default-channels)
 ;;
 ;; Then run: guix pull
@@ -17,11 +17,11 @@
    (channel
     (name rustup)
     (url "https://github.com/sbellem/guix-rustup")
-    (branch "1.93.0")
+    (branch "dev")
     (introduction
      (channel-introduction
       (version 0)
-      (commit "fc1c9cc75ff8918741ba80a846ac7a5465397281")
+      (commit "d9bcf7f979506b880a5ba25674a606a824d9c890")
       (signer "E39D 2B3D 0564 BA43 7BD9  2756 C38A E0EC CAB7 D5C8"))))
    (channel
     (name nonguix)
