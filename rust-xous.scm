@@ -405,6 +405,7 @@ targets with the riscv32imac-unknown-xous-elf target for Xous development.")
           (let* ((out (assoc-ref %outputs "out"))
                  (bin-dir (string-append out "/bin"))
                  (base-rust #$(this-package-input "rust"))
+                 (base-rust-cargo #$(this-package-input "rust:cargo"))
                  (merged-sysroot #$(this-package-input "rust-sysroot-merged"))
                  (gcc-toolchain #$(this-package-input "gcc-toolchain"))
                  (bash #$(this-package-input "bash"))
@@ -426,17 +427,17 @@ targets with the riscv32imac-unknown-xous-elf target for Xous development.")
                         base-rust merged-sysroot)))
             (chmod (string-append bin-dir "/rustc") #o755)
 
-            ;; Create wrapper for cargo
+            ;; Create wrapper for cargo (use cargo output, not main output)
             (call-with-output-file (string-append bin-dir "/cargo")
               (lambda (port)
                 (format port "#!~a/bin/bash~%" bash)
                 (format port "export LD_LIBRARY_PATH=\"~a${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}\"~%"
                         ld-library-path)
                 (format port "export RUSTC=~a/bin/rustc~%" out)
-                (format port "exec ~a/bin/cargo \"$@\"~%" base-rust)))
+                (format port "exec ~a/bin/cargo \"$@\"~%" base-rust-cargo)))
             (chmod (string-append bin-dir "/cargo") #o755)
 
-            ;; Symlink other tools
+            ;; Symlink other tools from main rust output
             (for-each
              (lambda (tool)
                (let ((source (string-append base-rust "/bin/" tool))
@@ -447,6 +448,7 @@ targets with the riscv32imac-unknown-xous-elf target for Xous development.")
                "rust-analyzer" "rustdoc"))))))
     (inputs
      `(("rust" ,rust-1.93.0)
+       ("rust:cargo" ,rust-1.93.0 "cargo")
        ("rust-sysroot-merged" ,rust-sysroot-merged)
        ("gcc-toolchain" ,gcc-toolchain)
        ("bash" ,bash)))
