@@ -26,12 +26,11 @@
   #:use-module (gnu packages rust)
   #:use-module (gnu packages version-control)
   #:use-module (rust-crates)
-  #:use-module (rustup build toolchain)
   #:use-module (ice-9 match))
 
-;;; Rust 1.93.0 from guix-rustup channel
-;;; Include riscv32imac-unknown-none-elf target for bare-metal code (boot0, boot1, etc.)
-(define rust-1.93.0 (rustup "1.93.0" #:targets '(riscv32imac-unknown-none-elf)))
+;;; Rust 1.93.0 built from source via guix (gnu packages rust)
+;;; Using @@ to access the non-public rust-1.93 package
+(define rust-1.93.0 (@@ (gnu packages rust) rust-1.93))
 
 ;;; The betrusted-io/rust fork with Xous target support
 (define rust-xous-source
@@ -97,6 +96,125 @@
    rust-windows-x86-64-gnullvm-0.53.1
    rust-windows-x86-64-msvc-0.53.1
    rust-wit-bindgen-0.45.1))
+
+;;; Build the bare-metal sysroot (libcore/liballoc for riscv32imac-unknown-none-elf)
+;;; This is for boot0, boot1, loader, and other no_std code
+(define-public bare-metal-sysroot
+  (package
+    (name "bare-metal-sysroot")
+    (version "1.93.0")
+    (source rust-xous-source)
+    (build-system gnu-build-system)
+    (arguments
+     (list
+      #:phases
+      #~(modify-phases %standard-phases
+          (delete 'configure)
+          (delete 'check)
+          (add-after 'unpack 'setup-vendor
+            (lambda* (#:key inputs #:allow-other-keys)
+              (use-modules (ice-9 popen)
+                           (ice-9 rdelim))
+              (let ((vendor-dir "library/vendor"))
+                (mkdir-p vendor-dir)
+                (for-each
+                 (lambda (input)
+                   (let* ((name (car input))
+                          (path (cdr input)))
+                     (when (string-prefix? "crate-" name)
+                       (let* ((file-name (basename path))
+                              (crate-name (substring file-name
+                                                     5
+                                                     (- (string-length file-name) 7)))
+                              (crate-dir (string-append vendor-dir "/" crate-name))
+                              (port (open-input-pipe (string-append "sha256sum " path)))
+                              (checksum-line (read-line port))
+                              (_ (close-pipe port))
+                              (checksum (car (string-split checksum-line #\space))))
+                         (mkdir-p crate-dir)
+                         (invoke "tar" "xzf" path
+                                 "-C" crate-dir
+                                 "--strip-components=1")
+                         (call-with-output-file
+                             (string-append crate-dir "/.cargo-checksum.json")
+                           (lambda (port)
+                             (format port "{\"files\":{},\"package\":\"~a\"}" checksum)))))))
+                 inputs))))
+          (replace 'build
+            (lambda* (#:key native-inputs inputs #:allow-other-keys)
+              (let* ((vendor-dir (string-append (getcwd) "/library/vendor"))
+                     (riscv-gcc (search-input-file inputs "/bin/riscv32-none-elf-gcc"))
+                     (riscv-ar (search-input-file inputs "/bin/riscv32-none-elf-ar"))
+                     (host-gcc (search-input-file inputs "/bin/gcc"))
+                     (gcc-lib (search-input-file inputs "/lib/libgcc_s.so.1"))
+                     (gcc-lib-dir (dirname gcc-lib))
+                     (cc-wrapper-dir (string-append (getcwd) "/cc-wrapper")))
+                (setenv "HOME" (getcwd))
+                (setenv "CARGO_HOME" (string-append (getcwd) "/.cargo"))
+                (mkdir-p (getenv "CARGO_HOME"))
+                (mkdir-p cc-wrapper-dir)
+                (symlink host-gcc (string-append cc-wrapper-dir "/cc"))
+                (setenv "PATH" (string-append cc-wrapper-dir ":" (getenv "PATH")))
+                (setenv "LD_LIBRARY_PATH" gcc-lib-dir)
+                (call-with-output-file ".cargo/config.toml"
+                  (lambda (port)
+                    (format port "[source.crates-io]~%")
+                    (format port "replace-with = \"vendored-sources\"~%")
+                    (format port "~%")
+                    (format port "[source.vendored-sources]~%")
+                    (format port "directory = \"~a\"~%" vendor-dir)))
+                (setenv "CARGO_PROFILE_RELEASE_DEBUG" "0")
+                (setenv "CARGO_PROFILE_RELEASE_OPT_LEVEL" "3")
+                (setenv "CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS" "false")
+                (setenv "RUSTC_BOOTSTRAP" "1")
+                (setenv "RUSTFLAGS"
+                        "-Cforce-unwind-tables=yes -Cembed-bitcode=yes -Zforce-unstable-if-unmarked")
+                (setenv "__CARGO_DEFAULT_LIB_METADATA" "stablestd")
+                (setenv "CC" host-gcc)
+                (setenv "CC_riscv32imac_unknown_none_elf" riscv-gcc)
+                (setenv "AR_riscv32imac_unknown_none_elf" riscv-ar)
+                (setenv "RUST_COMPILER_RT_ROOT"
+                        (string-append (getcwd) "/src/llvm-project/compiler-rt"))
+                ;; Build sysroot for bare-metal target
+                (invoke "cargo" "build"
+                        "--target" "riscv32imac-unknown-none-elf"
+                        "-Zbinary-dep-depinfo"
+                        "--release"
+                        "--features" "compiler-builtins-c compiler-builtins-mem"
+                        "--manifest-path" "library/sysroot/Cargo.toml"))))
+          (replace 'install
+            (lambda* (#:key outputs #:allow-other-keys)
+              (let* ((out (assoc-ref outputs "out"))
+                     (lib-dir (string-append out "/lib/rustlib/riscv32imac-unknown-none-elf/lib")))
+                (mkdir-p lib-dir)
+                (call-with-output-file
+                    (string-append out "/lib/rustlib/riscv32imac-unknown-none-elf/RUST_VERSION")
+                  (lambda (port)
+                    (format port "~a~%" #$version)))
+                (for-each
+                 (lambda (file)
+                   (copy-file file (string-append lib-dir "/" (basename file))))
+                 (find-files "library/target/riscv32imac-unknown-none-elf/release/deps"
+                             "\\.rlib$"))))))))
+    (native-inputs
+     `(("rust" ,rust-1.93.0)
+       ("rust:cargo" ,rust-1.93.0 "cargo")
+       ("gcc-toolchain" ,gcc-toolchain)
+       ("git" ,git)
+       ("tar" ,tar)
+       ("gzip" ,gzip)
+       ("coreutils" ,coreutils)
+       ("riscv32-none-elf-gcc" ,riscv32-none-elf-gcc)
+       ("riscv32-none-elf-binutils" ,riscv32-none-elf-binutils)
+       ,@(map (lambda (crate)
+                `(,(string-append "crate-" (origin-file-name crate)) ,crate))
+              sysroot-crate-inputs)))
+    (home-page "https://github.com/betrusted-io/rust")
+    (synopsis "Bare-metal sysroot for riscv32imac-unknown-none-elf target")
+    (description "Pre-built core library (sysroot) for the
+riscv32imac-unknown-none-elf Rust target, enabling compilation of bare-metal
+code like boot0, boot1, and loader.")
+    (license (list license:asl2.0 license:expat))))
 
 ;;; Build the Xous sysroot (libstd for riscv32imac-unknown-xous-elf)
 (define-public xous-sysroot
@@ -217,6 +335,7 @@
                              "\\.rlib$"))))))))
     (native-inputs
      `(("rust" ,rust-1.93.0)
+       ("rust:cargo" ,rust-1.93.0 "cargo")
        ("gcc-toolchain" ,gcc-toolchain)
        ("git" ,git)
        ("tar" ,tar)
@@ -236,6 +355,7 @@ applications.")
     (license (list license:asl2.0 license:expat))))
 
 ;;; Merged sysroot combining base Rust targets with Xous
+;;; Note: bare-metal target (riscv32imac-unknown-none-elf) should use -Z build-std=core,alloc
 (define-public rust-sysroot-merged
   (package
     (name "rust-sysroot-merged")
