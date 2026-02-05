@@ -21,5 +21,5 @@
     (introduction
      (channel-introduction
       (version 0)
-      (commit "8744fbb65ef28f44980fc8c01eb99ba2f8183b91")
+      (commit "8afebcc7e3a13bddc2ff3d11131a9fb43b5a896e")
       (signer "E39D 2B3D 0564 BA43 7BD9  2756 C38A E0EC CAB7 D5C8"))))))
