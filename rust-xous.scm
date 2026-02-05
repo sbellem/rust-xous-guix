@@ -26,11 +26,11 @@
   #:use-module (gnu packages rust)
   #:use-module (gnu packages version-control)
   #:use-module (rust-crates)
+  #:use-module (rust)
   #:use-module (ice-9 match))
 
-;;; Rust 1.93.0 built from source via guix (gnu packages rust)
-;;; Using @@ to access the non-public rust-1.93 package
-(define rust-1.93.0 (@@ (gnu packages rust) rust-1.93))
+;;; Rust 1.93.0 built from source via gluons channel
+(define rust-1.93.0 rust-1.93)
 
 ;;; The betrusted-io/rust fork with Xous target support
 (define rust-xous-source

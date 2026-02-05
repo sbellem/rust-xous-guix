@@ -4,7 +4,7 @@
 ;;
 ;;   (cons (channel
 ;;           (name 'rust-xous)
-;;           (url "https://github.com/sbellem/guix-rustup"))
+;;           (url "https://github.com/baochip/rust-xous-guix"))
 ;;         %default-channels)
 ;;
 ;; Then run: guix pull
@@ -15,19 +15,11 @@
   (directory ".")
   (dependencies
    (channel
-    (name rustup)
-    (url "https://github.com/sbellem/guix-rustup")
-    (branch "dev")
+    (name gluons)
+    (url "https://codeberg.org/gluonix/gluons.git")
+    (branch "main")
     (introduction
      (channel-introduction
       (version 0)
-      (commit "d9bcf7f979506b880a5ba25674a606a824d9c890")
-      (signer "E39D 2B3D 0564 BA43 7BD9  2756 C38A E0EC CAB7 D5C8"))))
-   (channel
-    (name nonguix)
-    (url "https://gitlab.com/nonguix/nonguix")
-    (introduction
-     (channel-introduction
-      (version 0)
-      (commit "897c1a470da759236cc11798f4e0a5f7d4d59fbc")
-      (signer "2A39 3FFF 68F4 EF7A 3D29  12AF 6F51 20A0 22FB B2D5"))))))
+      (commit "8744fbb65ef28f44980fc8c01eb99ba2f8183b91")
+      (signer "E39D 2B3D 0564 BA43 7BD9  2756 C38A E0EC CAB7 D5C8"))))))
